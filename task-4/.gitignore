@@ -1,0 +1,20 @@
+# .NET build outputs
+bin/
+obj/
+*.user
+*.suo
+
+# Local secrets — NEVER commit
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vs/
+.idea/
+.vscode/*
+!.vscode/settings.json
+
+# OS / misc
+Thumbs.db
+.DS_Store
