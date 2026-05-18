@@ -3,7 +3,7 @@
 [![CI](https://github.com/Warhammer2000/Task-4/actions/workflows/ci.yml/badge.svg)](https://github.com/Warhammer2000/Task-4/actions/workflows/ci.yml)
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4.svg)](https://dotnet.microsoft.com/download/dotnet/10.0)
 [![MCP](https://img.shields.io/badge/MCP-1.3.0%20GA-7B61FF.svg)](https://www.nuget.org/packages/ModelContextProtocol)
-[![Tests](https://img.shields.io/badge/tests-20%20passing-success.svg)](./tests/)
+[![Tests](https://img.shields.io/badge/tests-19%20passing-success.svg)](./tests/)
 
 > AI-ready coordinator for a busy airport. Accepts flight plans, schedules arrivals & departures across runways, gates, and ground crew respecting separation, turnaround, and dependency buffers, then exposes the entire state to MCP-compatible AI clients (Claude Desktop, mcp-inspector, custom hosts).
 
@@ -30,7 +30,7 @@ dotnet test
 | What | Where |
 |------|-------|
 | **Source code** | [`src/AtcMcpServer/`](./src/AtcMcpServer/) — single .NET 10 console project, no extra services |
-| **Tests** | [`tests/AtcMcpServer.Tests/`](./tests/AtcMcpServer.Tests/) — 20 tests including all 3 brief scenarios |
+| **Tests** | [`tests/AtcMcpServer.Tests/`](./tests/AtcMcpServer.Tests/) — 19 tests including all 3 brief scenarios |
 | **Scheduling write-up** | [`report.md`](./report.md) — approach, decisions, what worked, what didn't |
 | **Env reference** | [`.env.example`](./.env.example) — every variable documented with examples |
 | **Tools + resources reference** | [§ Reference](#reference-tools--resources) below |
@@ -65,7 +65,7 @@ cd Task-4/task-4
 # Build everything
 dotnet build
 
-# Run the test suite (20 tests, includes all 3 brief scenarios)
+# Run the test suite (19 tests, includes all 3 brief scenarios)
 dotnet test
 ```
 
@@ -218,7 +218,7 @@ The inspector opens at `http://localhost:5173` with a UI to list/call tools, lis
 Every push to `main` (and every PR) triggers [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) which:
 
 1. Builds the .NET 10 solution in Release mode.
-2. Runs the full 20-test xUnit suite.
+2. Runs the full 19-test xUnit suite.
 3. Boots the MCP server with a real airport config (`configs/lhr.env`) and sends `initialize` + `tools/list` + `resources/list` over stdio — asserts all 5 tools and all 3 resources appear in the response.
 4. Builds the Docker image and repeats the stdio smoke inside the container with `--env-file configs/lhr.env`.
 
