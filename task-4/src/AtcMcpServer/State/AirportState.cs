@@ -33,8 +33,19 @@ public sealed class AirportState
     // ---- Flight queue management -----------------------------------------
 
     /// <summary>
-    /// Submit a flight. Throws on duplicate flight number or invalid reference
-    /// (dependency on a non-existent flight).
+    /// Submit a flight. Throws ONLY on duplicate flight number.
+    ///
+    /// Dependency validation is deliberately deferred to schedule time. Reason:
+    /// MCP clients (Claude Desktop, the SDK's worker pool, etc.) may dispatch
+    /// concurrent submit_flight tool calls. The lock in this method guarantees
+    /// no data corruption, but NOT submission order — a request submitting
+    /// flight B that depends on A can be processed before A's submission even
+    /// when A was sent first over the wire.
+    ///
+    /// Rejecting B at submission time in that case is a false negative. The
+    /// Scheduler already has a <see cref="UnscheduleReasons.DependencyMissing"/>
+    /// path for the "still unknown at scheduling time" case, which is the
+    /// correct moment to surface the failure.
     /// </summary>
     public void SubmitFlight(Flight flight)
     {
@@ -43,17 +54,6 @@ public sealed class AirportState
             if (_flights.ContainsKey(flight.FlightNumber))
                 throw new InvalidOperationException(
                     $"Flight '{flight.FlightNumber}' already submitted. Use cancel + resubmit if you need to replace it.");
-
-            // Dependencies must point to known flights (so they can be re-evaluated on
-            // schedule generation). We don't reject if dependency is Cancelled — that's
-            // a scheduling-time concern, not a submission-time concern.
-            foreach (var dep in flight.DependsOn)
-            {
-                if (!_flights.ContainsKey(dep))
-                    throw new InvalidOperationException(
-                        $"Flight '{flight.FlightNumber}' depends on unknown flight '{dep}'. " +
-                        $"Submit the dependency first, then this flight.");
-            }
 
             flight.SubmissionOrder = Interlocked.Increment(ref _nextSubmissionOrder);
             flight.Status = FlightStatus.Queued;

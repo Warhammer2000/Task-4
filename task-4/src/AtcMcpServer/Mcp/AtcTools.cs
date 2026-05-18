@@ -45,8 +45,8 @@ public static class AtcTools
             string operationType,
         [Description("Priority level: 'high', 'medium', or 'low'. Higher priority is preferred when resources are contested.")]
             string priority,
-        [Description("OPTIONAL: list of other flight numbers this flight depends on. The dependant cannot start until ALL its deps end + the configured dependency buffer.")]
-            string[]? dependsOn = null,
+        [Description("OPTIONAL: comma-separated list of other flight numbers this flight depends on (e.g. 'BA101' or 'BA101,LH202'). The dependant cannot start until ALL its deps end + the configured dependency buffer.")]
+            string? dependsOn = null,
         [Description("OPTIONAL: minimum runway length in meters this flight requires. Wide-body / heavy aircraft typically need 3500-4000m+.")]
             int? minRunwayLengthMeters = null,
         [Description("OPTIONAL: required runway category (free-form label matched against the airport's configured runway categories, e.g. 'heavy', 'medium', 'short').")]
@@ -57,12 +57,23 @@ public static class AtcTools
         if (!Enum.TryParse<Priority>(priority, ignoreCase: true, out var pri))
             return ErrorJson($"Invalid priority '{priority}'. Expected 'high', 'medium', or 'low'.");
 
+        // dependsOn arrives as a comma-separated string from the MCP client.
+        // We tried `string[]?` originally — but the ModelContextProtocol SDK
+        // 1.3.0 emits a schema fragment without a `type` field for nullable
+        // arrays, which makes every JSON-RPC client send the value as a
+        // string anyway (or skip it). A scalar string with comma-split is
+        // unambiguous, schema-clean, and matches how LLM clients tend to
+        // produce list-typed inputs.
+        var deps = string.IsNullOrWhiteSpace(dependsOn)
+            ? System.Array.Empty<string>()
+            : dependsOn.Split(',', System.StringSplitOptions.RemoveEmptyEntries | System.StringSplitOptions.TrimEntries);
+
         var flight = new Flight
         {
             FlightNumber = flightNumber,
             Operation = op,
             Priority = pri,
-            DependsOn = dependsOn ?? Array.Empty<string>(),
+            DependsOn = deps,
             MinRunwayLengthMeters = minRunwayLengthMeters,
             RequiredRunwayCategory = requiredRunwayCategory,
         };
