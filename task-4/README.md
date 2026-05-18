@@ -1,9 +1,29 @@
 # Air Traffic Control — MCP Server
 
+[![CI](https://github.com/Warhammer2000/Task-4/actions/workflows/ci.yml/badge.svg)](https://github.com/Warhammer2000/Task-4/actions/workflows/ci.yml)
+[![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4.svg)](https://dotnet.microsoft.com/download/dotnet/10.0)
+[![MCP](https://img.shields.io/badge/MCP-1.3.0%20GA-7B61FF.svg)](https://www.nuget.org/packages/ModelContextProtocol)
+[![Tests](https://img.shields.io/badge/tests-20%20passing-success.svg)](./tests/)
+
 > AI-ready coordinator for a busy airport. Accepts flight plans, schedules arrivals & departures across runways, gates, and ground crew respecting separation, turnaround, and dependency buffers, then exposes the entire state to MCP-compatible AI clients (Claude Desktop, mcp-inspector, custom hosts).
 
 **Built for:** Vention AI Challenge 2.0 · Task 4 — *MCPing*
-**Stack:** C# / .NET 10 · `ModelContextProtocol` NuGet 1.3.0 · xUnit
+**Stack:** C# / .NET 10 · `ModelContextProtocol` NuGet 1.3.0 · xUnit · Docker
+
+## TL;DR — three ways to run it
+
+```bash
+# 1. Local .NET (fastest if you have .NET 10)
+set -a; source configs/lhr.env; set +a
+dotnet run --project src/AtcMcpServer
+
+# 2. Docker (no .NET install needed)
+docker build -t atc-mcp .
+docker run --rm -i --env-file configs/lhr.env atc-mcp
+
+# 3. Pre-built test suite (proves everything works before you wire to Claude)
+dotnet test
+```
 
 ## Submission artifacts (quick links)
 
@@ -101,9 +121,37 @@ dotnet run --project src/AtcMcpServer
 
 The server prints structured logs to **stderr** (stdout is reserved for the MCP JSON-RPC protocol). On stdin-EOF it shuts down cleanly.
 
+### Run via Docker (no .NET install needed)
+
+```bash
+docker build -t atc-mcp .
+
+# Pick a real-airport config from configs/ — or use your own .env
+docker run --rm -i --init --env-file configs/lhr.env atc-mcp
+```
+
+The image is ~300 MB (Microsoft's official .NET 10 runtime base + the published DLLs). The container runs as non-root (`app` user, uid 1654). Stdio is the transport so **`-i` is required**; there's no port to expose.
+
+**`--init` is also required**: it makes tini PID 1 inside the container, which forwards signals correctly and ensures dotnet's stdout flushes before process exit on stdin EOF. Without it, the final JSON-RPC response is silently lost during teardown. (Discovered the hard way — see `report.md` §5 *"what didn't work"*.)
+
+### Pre-built airport configurations
+
+Four real airports are pre-configured in [`configs/`](./configs/). Just point at the one you want:
+
+| File | Airport | Runways | Gates | Notable |
+|------|---------|---------|-------|---------|
+| [`configs/lhr.env`](./configs/lhr.env) | London Heathrow | 2 (3902m heavy, 3660m medium) | 8 | ICAO Cat-F dimensions |
+| [`configs/jfk.env`](./configs/jfk.env) | New York JFK | 4 (mixed lengths/categories) | 12 | Multi-runway capability matching |
+| [`configs/dxb.env`](./configs/dxb.env) | Dubai International | 2 (both 4000m+ heavy) | 10 | Wake-turbulence separation |
+| [`configs/ala.env`](./configs/ala.env) | Almaty | 2 (3400m medium, 4500m heavy) | 6 | Constrained gate capacity |
+
+See [`configs/README.md`](./configs/README.md) for sourcing details.
+
 ### Connect from Claude Desktop
 
-Add this block to your `claude_desktop_config.json` (Settings → Developer → Edit Config):
+Add this block to your `claude_desktop_config.json` (Settings → Developer → Edit Config).
+
+**Option A — local dotnet:**
 
 ```json
 {
@@ -111,8 +159,7 @@ Add this block to your `claude_desktop_config.json` (Settings → Developer → 
     "atc": {
       "command": "dotnet",
       "args": [
-        "run",
-        "--project",
+        "run", "--project",
         "C:/absolute/path/to/Task-4/task-4/src/AtcMcpServer",
         "--no-build"
       ],
@@ -134,7 +181,24 @@ Add this block to your `claude_desktop_config.json` (Settings → Developer → 
 }
 ```
 
-Then **restart Claude Desktop**. The 5 tools and 3 resources show up under the airport icon in the chat composer. Ask Claude: *"Submit a high-priority arrival BA101 and a connecting departure LH202, then generate the schedule and tell me the bottleneck."*
+**Option B — Docker (after `docker build -t atc-mcp .`):**
+
+```json
+{
+  "mcpServers": {
+    "atc": {
+      "command": "docker",
+      "args": [
+        "run", "--rm", "-i", "--init",
+        "--env-file", "C:/absolute/path/to/configs/lhr.env",
+        "atc-mcp:latest"
+      ]
+    }
+  }
+}
+```
+
+Then **restart Claude Desktop**. The 5 tools and 3 resources show up under the airport icon in the chat composer. Ask Claude: *"Submit a high-priority arrival BA101 and a connecting departure LH202 that depends on it, then generate the schedule and tell me the bottleneck."*
 
 ### Connect from `@modelcontextprotocol/inspector` (visual debugger)
 
@@ -148,6 +212,17 @@ npx @modelcontextprotocol/inspector \
 ```
 
 The inspector opens at `http://localhost:5173` with a UI to list/call tools, list/read resources, and inspect the raw JSON-RPC traffic.
+
+### Continuous integration
+
+Every push to `main` (and every PR) triggers [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) which:
+
+1. Builds the .NET 10 solution in Release mode.
+2. Runs the full 20-test xUnit suite.
+3. Boots the MCP server with a real airport config (`configs/lhr.env`) and sends `initialize` + `tools/list` + `resources/list` over stdio — asserts all 5 tools and all 3 resources appear in the response.
+4. Builds the Docker image and repeats the stdio smoke inside the container with `--env-file configs/lhr.env`.
+
+The badge at the top of this README links to the latest run. Green = everything compiles, all tests pass, and both bare-metal and Docker runtimes serve the MCP protocol correctly.
 
 ---
 

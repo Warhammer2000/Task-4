@@ -1,0 +1,41 @@
+# Convenience compose file for the ATC MCP server.
+#
+# Two usage patterns:
+#
+# 1) BUILD + SMOKE-TEST the image (one-off)
+#    ──────────────────────────────────────
+#    docker compose run --rm --build atc-mcp
+#
+#    The container reads stdin to play the MCP role. With `run` and stdin
+#    attached you can pipe JSON-RPC messages in for a quick functional
+#    check. `--rm` cleans up the container after exit.
+#
+# 2) Pick a real-airport config via env_file
+#    ─────────────────────────────────────────
+#    ATC_CONFIG=./configs/lhr.env docker compose run --rm atc-mcp
+#    ATC_CONFIG=./configs/jfk.env docker compose run --rm atc-mcp
+#
+#    Defaults to ./.env in the project root if ATC_CONFIG is unset.
+#
+# NOTE: `docker compose up` (detached, daemon-style) does NOT make sense
+# for an MCP server because the transport is stdio. Claude Desktop is the
+# preferred client and it launches the container itself (see README).
+
+services:
+  atc-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: atc-mcp:latest
+    container_name: atc-mcp
+    stdin_open: true
+    tty: false
+    # Tini as PID 1. Without it, dotnet's stdout doesn't drain reliably
+    # when stdin reaches EOF — the final JSON-RPC response is lost during
+    # process teardown. Tini forwards signals correctly and ensures
+    # writes flush before exit. Tested with .NET 10.0.300 on Linux.
+    init: true
+    env_file:
+      - ${ATC_CONFIG:-./.env}
+    # Restart policy intentionally omitted — the server is request-driven
+    # via stdin; restarting on exit would be incorrect for the MCP lifecycle.

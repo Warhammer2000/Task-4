@@ -1,0 +1,40 @@
+# Build outputs
+**/bin/
+**/obj/
+
+# Test artifacts and tests themselves (image is for runtime only)
+tests/
+**/TestResults/
+
+# Local secrets
+.env
+.env.local
+**/.env.*.local
+
+# Version control & IDE
+.git/
+.gitignore
+.vs/
+.idea/
+.vscode/
+
+# Docs (not needed at runtime; keep image small)
+README.md
+report.md
+**/*.md
+
+# OS junk
+**/Thumbs.db
+**/.DS_Store
+
+# CI configs
+.github/
+
+# Configs (mounted at runtime via -e, not baked in)
+configs/
+
+# Misc top-level
+*.slnx
+*.sln
+Dockerfile
+.dockerignore

@@ -1,0 +1,98 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'task-4/**'
+      - '.github/workflows/ci.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'task-4/**'
+      - '.github/workflows/ci.yml'
+
+jobs:
+  build-and-test:
+    name: Build & test (.NET 10)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: task-4
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            10.0.x
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Build (Release, no restore)
+        run: dotnet build --configuration Release --no-restore
+
+      - name: Test (Release, no build) — all 20 tests
+        run: dotnet test --configuration Release --no-build --verbosity normal --logger "console;verbosity=detailed"
+
+      - name: MCP smoke — verify stdio + tool discovery with LHR config
+        # Real-world sanity check that goes beyond unit tests: actually starts
+        # the MCP server, sends the JSON-RPC initialize handshake + tools/list +
+        # resources/list, and asserts that all 5 tools and 3 resources surface.
+        run: |
+          set -a
+          source configs/lhr.env
+          set +a
+          {
+            printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"ci-smoke","version":"1"}}}'
+            printf '%s\n' '{"jsonrpc":"2.0","method":"notifications/initialized"}'
+            printf '%s\n' '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}'
+            printf '%s\n' '{"jsonrpc":"2.0","id":3,"method":"resources/list","params":{}}'
+            sleep 1
+          } | dotnet src/AtcMcpServer/bin/Release/net10.0/AtcMcpServer.dll > /tmp/mcp_smoke.out 2>/tmp/mcp_smoke.err
+          echo "---- stdout ----"
+          cat /tmp/mcp_smoke.out
+          echo "---- stderr ----"
+          tail -20 /tmp/mcp_smoke.err
+          echo "---- assertions ----"
+          # 5 tools must appear
+          for tool in submit_flight generate_schedule airport_status cancel_flight bottleneck_analysis; do
+            grep -q "\"$tool\"" /tmp/mcp_smoke.out && echo "OK  tool: $tool" || (echo "FAIL tool: $tool" && exit 1)
+          done
+          # 3 resources must appear (via their atc:// URIs)
+          for uri in "atc://flights/queue" "atc://runways" "atc://timeline"; do
+            grep -q "$uri" /tmp/mcp_smoke.out && echo "OK  resource: $uri" || (echo "FAIL resource: $uri" && exit 1)
+          done
+
+  docker:
+    name: Docker build + smoke
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    defaults:
+      run:
+        working-directory: task-4
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t atc-mcp:ci .
+
+      - name: Smoke — initialize + tools/list inside container with LHR config
+        run: |
+          {
+            printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"ci-docker-smoke","version":"1"}}}'
+            printf '%s\n' '{"jsonrpc":"2.0","method":"notifications/initialized"}'
+            printf '%s\n' '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}'
+            sleep 3
+          } | docker run --rm -i --init --env-file configs/lhr.env atc-mcp:ci > /tmp/docker_smoke.out
+          cat /tmp/docker_smoke.out
+          # The container must reply with the expected 5 tools
+          for tool in submit_flight generate_schedule airport_status cancel_flight bottleneck_analysis; do
+            grep -q "\"$tool\"" /tmp/docker_smoke.out && echo "OK  $tool" || (echo "FAIL $tool" && exit 1)
+          done
